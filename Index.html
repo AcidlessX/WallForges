@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WallForge AI Ultra | 4K Studio</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background: #020617; color: #f8fafc; height: 100vh; display: flex; overflow: hidden; }
+        .glass { background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.08); }
+        .accent-gradient { background: linear-gradient(135deg, #8b5cf6 0%, #d946ef 100%); }
+        .sidebar-item { transition: all 0.3s ease; border-left: 3px solid transparent; }
+        .sidebar-item:hover { background: rgba(139, 92, 246, 0.1); border-left: 3px solid #8b5cf6; }
+        #canvas-wrap { border-radius: 24px; box-shadow: 0 0 80px rgba(0,0,0,0.9); overflow: hidden; }
+        .generating #canvas-wrap { filter: blur(10px); opacity: 0.5; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .animate-spin-slow { animation: spin 3s linear infinite; }
+    </style>
+</head>
+<body>
+
+    <aside class="w-80 glass flex flex-col border-r border-white/5 z-20">
+        <div class="p-8">
+            <h1 class="text-xl font-extrabold tracking-tight">WallForge <span class="text-purple-500">AI</span></h1>
+            <p class="text-[10px] text-gray-500 uppercase tracking-widest font-bold">4K Studio Edition</p>
+        </div>
+        <div class="flex-1 overflow-y-auto px-4 space-y-2" id="categoryContainer"></div>
+        <div class="p-6 border-t border-white/5">
+            <button onclick="downloadWall()" class="w-full accent-gradient text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-3 shadow-lg shadow-purple-500/20">
+                <i class="fa-solid fa-download"></i> 4K Export
+            </button>
+        </div>
+    </aside>
+
+    <main class="flex-1 flex flex-col p-8 relative" id="mainStudio">
+        <div class="max-w-4xl w-full mx-auto glass rounded-3xl p-3 flex gap-3 shadow-2xl mb-8 items-center border border-white/10">
+            <input id="mainPrompt" type="text" placeholder="Dein Wallpaper Wunsch..." class="flex-1 bg-transparent border-none py-4 px-6 outline-none text-lg text-white">
+            <button onclick="generateWallpaper()" id="genBtn" class="accent-gradient px-10 py-4 rounded-2xl font-bold hover:scale-105 active:scale-95 transition-all flex items-center gap-3">
+                <span>START</span> <i class="fa-solid fa-bolt"></i>
+            </button>
+        </div>
+
+        <div class="flex-1 flex items-center justify-center relative">
+            <div id="loader" class="hidden absolute z-50 flex flex-col items-center">
+                <div class="w-16 h-16 border-4 border-purple-500/20 border-t-purple-500 rounded-full animate-spin mb-4"></div>
+                <p class="text-purple-400 font-bold tracking-widest animate-pulse">KI GENERIERT PIXEL...</p>
+            </div>
+            <div id="canvas-wrap"><canvas id="editorCanvas"></canvas></div>
+        </div>
+    </main>
+
+    <script>
+        // DEIN TOKEN IST HIER FEST VERBAUT
+        const HF_TOKEN = "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"; 
+        const canvas = new fabric.Canvas('editorCanvas');
+
+        const categories = [
+            {n: "Cyberpunk Night", p: "Cyberpunk city, neon rain, futuristic cars, 8k"},
+            {n: "Anime Garden", p: "Studio Ghibli style, peaceful garden, summer sun, watercolor"},
+            {n: "Space OLED", p: "Minimalist galaxy, deep black, glowing stars, 4k"},
+            {n: "Hyper Nature", p: "Majestic mountains, crystal lake, sunset, hyper-realistic"}
+        ];
+
+        function init() {
+            const container = document.getElementById('categoryContainer');
+            categories.forEach(c => {
+                const d = document.createElement('div');
+                d.className = "sidebar-item px-6 py-4 cursor-pointer text-sm text-gray-400 flex items-center gap-3 rounded-xl";
+                d.innerHTML = `<i class="fa-solid fa-wand-sparkles text-purple-600/40"></i> ${c.n}`;
+                d.onclick = () => { document.getElementById('mainPrompt').value = c.p; generateWallpaper(); };
+                container.appendChild(d);
+            });
+            setupCanvas();
+        }
+
+        function setupCanvas() {
+            const w = window.innerWidth * 0.55;
+            canvas.setWidth(w);
+            canvas.setHeight(w * (9/16));
+            canvas.backgroundColor = '#0b0f1a';
+            canvas.renderAll();
+        }
+
+        async function generateWallpaper(retryCount = 0) {
+            const prompt = document.getElementById('mainPrompt').value;
+            if(!prompt) return;
+
+            document.getElementById('mainStudio').classList.add('generating');
+            document.getElementById('loader').classList.remove('hidden');
+            document.getElementById('genBtn').disabled = true;
+
+            try {
+                const response = await fetch("https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${HF_TOKEN}` },
+                    body: JSON.stringify({ inputs: prompt + ", 4k resolution, high quality" }),
+                });
+
+                // Wenn das Modell noch lädt (503), versuchen wir es bis zu 3x automatisch
+                if (response.status === 503 && retryCount < 3) {
+                    setTimeout(() => generateWallpaper(retryCount + 1), 5000);
+                    return;
+                }
+
+                if (!response.ok) throw new Error("API Limit");
+
+                const blob = await response.blob();
+                const url = URL.createObjectURL(blob);
+
+                fabric.Image.fromURL(url, (img) => {
+                    img.scaleToWidth(canvas.width);
+                    canvas.setBackgroundImage(img, canvas.renderAll.bind(canvas));
+                    document.getElementById('mainStudio').classList.remove('generating');
+                    document.getElementById('loader').classList.add('hidden');
+                    document.getElementById('genBtn').disabled = false;
+                }, { crossOrigin: 'anonymous' });
+
+            } catch (e) {
+                console.error("Fehler:", e);
+                // LETZTER FALLBACK: Wenn die KI streikt, nehmen wir ein hochwertiges Unsplash Bild
+                const fallbackUrl = `https://source.unsplash.com/featured/1920x1080?${encodeURIComponent(prompt)}`;
+                fabric.Image.fromURL(fallbackUrl, (img) => {
+                    img.scaleToWidth(canvas.width);
+                    canvas.setBackgroundImage(img, canvas.renderAll.bind(canvas));
+                }, { crossOrigin: 'anonymous' });
+                
+                document.getElementById('mainStudio').classList.remove('generating');
+                document.getElementById('loader').classList.add('hidden');
+                document.getElementById('genBtn').disabled = false;
+            }
+        }
+
+        function downloadWall() {
+            const link = document.createElement('a');
+            link.download = `WallForge-4K.png`;
+            link.href = canvas.toDataURL({ format: 'png', multiplier: 4 }); 
+            link.click();
+        }
+
+        window.onresize = setupCanvas;
+        init();
+    </script>
+</body>
+</html>
